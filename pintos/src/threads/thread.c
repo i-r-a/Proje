@@ -347,17 +347,59 @@ thread_get_priority (void)
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+thread_set_nice (int nice)
 {
-  /* Not yet implemented. */
+	struct thread *curr = thread_current();
+	curr->nice = nice;
+
+	thread_calculate_priority(curr);
+
+	if (curr != idle_thread)
+	{
+		if (list_entry (list_begin (&ready_list), struct thread, elem)->priority > curr->priority)
+	    {
+	    enum intr_level old_level;
+	    old_level = intr_disable ();
+
+	    thread_yield ();
+	    intr_set_level (old_level);
+	    }
+	}
 }
+
+void
+thread_calculate_priority (struct thread* curr)
+{
+    ASSERT (is_thread (curr));
+    if (curr != idle_thread)
+    {
+        curr->priority = PRI_MAX - CONVERT_TO_INT_NEAR (curr->recent_cpu / 4) - curr->nice * 2;
+    }
+    if (curr->priority < PRI_MIN)
+    {
+        curr->priority = PRI_MIN;
+    }
+    else if (curr->priority > PRI_MAX)
+    {
+        curr->priority = PRI_MAX;
+    }
+}
+
+/*static void
+thread_calculate_recent_cpu (struct thread *curr)
+{
+  if (curr == idle_thread)
+    return;
+
+  int load = 2 * load_avg;
+  curr->recent_cpu = INT_ADD (FP_MUL (FP_DIV (load, INT_ADD (load, 1)), curr->recent_cpu), curr->nice);
+}*/
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current ()->nice;
 }
 
 /* Returns 100 times the system load average. */
