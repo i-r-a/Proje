@@ -101,6 +101,9 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
     int64_t endSleep;			/*Amount of ticks required until thread is unblocked*/
+
+    int nice;	//Our nice value
+    int recent_cpu;	//Int representing recent cpu
   };
 
 /* If false (default), use round-robin scheduler.

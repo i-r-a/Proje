@@ -97,7 +97,7 @@ timer_sleep (int64_t ticks)
 enum intr_level old_level = intr_disable();
 thread_block();
 /*void list_insert_ordered(struct list, struct list_elem, list_less_func,void aux);*/
-list_insert_ordered(&elemList,&thread_current()->elem,(list_less_func *) &tickComparison, NULL);
+list_insert_ordered(&orderedTimers,&thread_current()->elem,(list_less_func *) &tickComparison, NULL);
 intr_set_level(old_level);
 }
 
@@ -177,13 +177,13 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
-struct list_elem *firstSleep = list_begin(&elemList);
-while(firstSleep!=list_end(&elemList)){
+struct list_elem *firstSleep = list_begin(&orderedTimers);
+while(firstSleep!=list_end(&orderedTimers)){
 	struct thread *thr = list_entry(firstSleep,struct thread, elem);
-	if(ticks>=thr->ticks){
+	if(ticks>=thr->endSleep){
 	list_remove(firstSleep);
 	thread_unblock(thr);
-	firstSleep = list_begin(&elemList); /*sets firstSleep to the new first element in elemList*/
+	firstSleep = list_begin(&orderedTimers); /*sets firstSleep to the new first element in elemList*/
 }
 	
 }

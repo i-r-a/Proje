@@ -373,7 +373,7 @@ thread_calculate_priority (struct thread* curr)
     ASSERT (is_thread (curr));
     if (curr != idle_thread)
     {
-        curr->priority = PRI_MAX - CONVERT_TO_INT_NEAR (curr->recent_cpu / 4) - curr->nice * 2;
+        curr->priority = PRI_MAX - (int) (curr->recent_cpu / 4) - curr->nice * 2;
     }
     if (curr->priority < PRI_MIN)
     {
@@ -629,7 +629,7 @@ bool tickComparison(const struct list_elem *elem1, const struct list_elem *elem2
 {
 	struct thread *thread1 = list_entry(elem1, struct thread, elem);
 	struct thread *thread2 = list_entry(elem2, struct thread, elem);
-if(thread1->ticks > thread2->ticks)
+if(thread1->endSleep > thread2->endSleep)
 {return false;}
 return true;
 }
