@@ -625,7 +625,7 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 /*compares sleep times to order list*/
-bool tickComparison(const struct list_elem *elem1, const struct list_elem *elem2)
+bool tickComparison(const struct list_elem *elem1, const struct list_elem *elem2, void *aux UNUSED)
 {
 	struct thread *thread1 = list_entry(elem1, struct thread, elem);
 	struct thread *thread2 = list_entry(elem2, struct thread, elem);
