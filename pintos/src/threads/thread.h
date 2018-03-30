@@ -98,12 +98,14 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
 #endif
 
+    /* variables to support priority calculations and donations */
+    int base_priority;			/* priority set by user */
+    int recent_cpu;			/* 1000*recent_cpu value */
+    int nice;				/* thread's "nice" value */
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
     int64_t endSleep;			/*Amount of ticks required until thread is unblocked*/
-
-    int nice;	//Our nice value
-    int recent_cpu;	//Int representing recent cpu
   };
 
 /* If false (default), use round-robin scheduler.

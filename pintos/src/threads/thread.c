@@ -13,6 +13,7 @@
 #include "threads/vaddr.h"
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "threads/fixed_point.h" //Added fixed point arithmetic
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -49,6 +50,15 @@ struct kernel_thread_frame
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
+
+/* Load Average Calculation Memory */
+#define ONE_SECOND 100          /* number of clock ticks in 1 second */
+static int load_avg_cnt;  	/* sum clock ticks for load_avg interval */
+static int RT;                  /* Used to count ready threads */
+static int load_avg;            /* 1000*load_avg for priority calcs*/
+static int alpha;               /* 1000*alpha for priority calcs */
+static struct list_elem* lptr;  /* used to search lists */
+static struct thread* tptr;     /* used to access threads within lists */
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -134,6 +144,34 @@ thread_tick (void)
   else
     kernel_ticks++;
 
+/* Increment recent_cpu value of running thread every clock tick*/
+   if (t != idle_thread) t->recent_cpu++;
+
+/* Perform Priority Calculations once per second */
+   if ( ++load_avg_cnt > ONE_SECOND )
+   {
+      load_avg = (4028*load_avg + 68267*RT)/4096;         //Scaled by 1000
+      alpha = (2000*load_avg)/(1000+load_avg+load_avg);   //Scaled by 1000
+      load_avg_cnt = 0;					  //Reset counter
+
+/* Update all thread priorities once per second */
+/* note: list picked is all_list.  should it be ready list??? */
+/* if so, remember to change allelem to elem */
+      lptr = list_head(&all_list);
+      while ( (lptr = list_next(lptr)) != list_tail(&all_list) )
+      {
+         tptr = list_entry( lptr, struct thread, allelem );
+         tptr->recent_cpu = alpha * tptr->recent_cpu + 1000 * tptr->nice;
+#define DISABLE_PRIORITY_CHANGE 1
+         if ( DISABLE_PRIORITY_CHANGE != 1)
+         {
+            tptr->priority = tptr->priority - (tptr->recent_cpu/4000) - 2 * tptr->nice;
+            if (tptr->priority > PRI_MAX) tptr->priority = PRI_MAX;
+            if (tptr->priority < PRI_MIN) tptr->priority = PRI_MIN;
+         }
+      }
+   }
+
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
@@ -173,7 +211,6 @@ thread_create (const char *name, int priority,
   tid_t tid;
 
   ASSERT (function != NULL);
-
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
   if (t == NULL)
@@ -230,11 +267,10 @@ thread_block (void)
    update other data. */
 void
 thread_unblock (struct thread *t) 
-{
+{ 
   enum intr_level old_level;
 
   ASSERT (is_thread (t));
-
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
@@ -303,9 +339,8 @@ thread_yield (void)
 {
   struct thread *cur = thread_current ();
   enum intr_level old_level;
-  
   ASSERT (!intr_context ());
-
+  
   old_level = intr_disable ();
   if (cur != idle_thread) 
     list_push_back (&ready_list, &cur->elem);
@@ -336,6 +371,8 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  thread_current ()->base_priority = new_priority;
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -373,7 +410,7 @@ thread_calculate_priority (struct thread* curr)
     ASSERT (is_thread (curr));
     if (curr != idle_thread)
     {
-        curr->priority = PRI_MAX - (int) (curr->recent_cpu / 4) - curr->nice * 2;
+        curr->priority = PRI_MAX - CONVERT_TO_NEAREST_INT(curr->recent_cpu / 4) - curr->nice * 2;
     }
     if (curr->priority < PRI_MIN)
     {
@@ -406,17 +443,17 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return CONVERT_TO_NEAREST_INT(load_avg * 100);
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  struct thread *curr = thread_current ();
+  return CONVERT_TO_NEAREST_INT(curr->recent_cpu * 100);
 }
+
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -433,7 +470,6 @@ idle (void *idle_started_ UNUSED)
   struct semaphore *idle_started = idle_started_;
   idle_thread = thread_current ();
   sema_up (idle_started);
-
   for (;;) 
     {
       /* Let someone else run. */
@@ -504,8 +540,10 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->base_priority = priority;
+  t->recent_cpu;
+  t->nice = 0;
   t->magic = THREAD_MAGIC;
-
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -529,14 +567,28 @@ alloc_frame (struct thread *t, size_t size)
    empty.  (If the running thread can continue running, then it
    will be in the run queue.)  If the run queue is empty, return
    idle_thread. */
+
 static struct thread *
 next_thread_to_run (void) 
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  else {
+    static struct list_elem *e, *esav;
+    static int psav, tmp;
+    e    = list_begin(&ready_list);
+    esav = e;
+    psav = list_entry(e, struct thread, elem)->priority; 
+    while ( (e = list_next(e)) != list_end(&ready_list)) {
+       tmp = list_entry(e, struct thread, elem)->priority;
+       if (psav < tmp) { psav = tmp; esav = e; }; 
+       RT++;
+    }
+   list_remove( esav );
+   return list_entry(esav, struct thread, elem);
+ } 
 }
+/*===================================================================*/
 
 /* Completes a thread switch by activating the new thread's page
    tables, and, if the previous thread is dying, destroying it.
@@ -582,6 +634,7 @@ thread_schedule_tail (struct thread *prev)
       ASSERT (prev != cur);
       palloc_free_page (prev);
     }
+
 }
 
 /* Schedules a new process.  At entry, interrupts must be off and

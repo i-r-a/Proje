@@ -64,12 +64,26 @@ sema_down (struct semaphore *sema)
 
   ASSERT (sema != NULL);
   ASSERT (!intr_context ());
-
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem);
-      thread_block ();
+      if (list_empty(&sema->waiters))
+      {
+        list_push_back (&sema->waiters, &thread_current ()->elem);
+      }
+      else
+      {
+        struct list_elem* e = list_begin(&sema->waiters);
+        int pri = thread_current()->priority;
+        int ple = list_entry(e, struct thread, elem)->priority;
+        while ( (ple > pri) && (e != list_end(&sema->waiters) ) )
+        {
+           e = list_next(e);
+           ple = list_entry(e,struct thread, elem)->priority;
+        };
+        list_insert(e,&thread_current()->elem);
+      }
+      thread_block();
     }
   sema->value--;
   intr_set_level (old_level);
@@ -189,6 +203,7 @@ lock_init (struct lock *lock)
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep. */
+
 void
 lock_acquire (struct lock *lock)
 {
@@ -196,9 +211,21 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  static int pri01, pri02;
+  if (lock->holder != NULL)
+  {
+    /* force lock_holder pri > pri's of waiters */
+    pri01 = lock->holder->priority;
+    pri02 = thread_current ()->priority;
+    if ( pri01 <= pri02 ) pri01 = pri02 + 1;
+    if ( pri01 > PRI_MAX ) pri01 = PRI_MAX;
+    lock->holder->priority = pri01;
+  }  
+
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
 }
+
 
 /* Tries to acquires LOCK and returns true if successful or false
    on failure.  The lock must not already be held by the current
@@ -225,12 +252,15 @@ lock_try_acquire (struct lock *lock)
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
    handler. */
+
 void
 lock_release (struct lock *lock) 
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+  /* ensure restoration of base priority */
+  lock->holder->priority = lock->holder->base_priority;
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 }
