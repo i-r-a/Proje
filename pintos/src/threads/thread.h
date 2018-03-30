@@ -141,6 +141,5 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-bool tickComparison(const struct list_elem *elem1, const struct list_elem *elem2, void *aux UNUSED);
-bool PRIORITY (const struct list_elem *elem1,const struct list_elem *elem2, void *aux UNUSED);
+bool tickComparison(const struct list_elem *elem1, const struct list_elem *elem2);
 #endif /* threads/thread.h */
