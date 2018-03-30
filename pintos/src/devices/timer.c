@@ -24,7 +24,7 @@ static int64_t ticks;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 static struct list orderedTimers;
-
+static struct list elemList;
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
@@ -38,6 +38,7 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+list_init(&elemList);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -95,10 +96,11 @@ timer_sleep (int64_t ticks)
   ASSERT (intr_get_level () == INTR_ON);
  if(ticks<=0){return;}
 enum intr_level old_level = intr_disable();
-thread_block();
+//thread_block();
 /*void list_insert_ordered(struct list, struct list_elem, list_less_func,void aux);*/
 list_insert_ordered(&elemList,&thread_current()->elem,(list_less_func *) &tickComparison, NULL);
-intr_set_level(old_level);
+thread_block();
+	intr_set_level(old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -180,13 +182,13 @@ timer_interrupt (struct intr_frame *args UNUSED)
 struct list_elem *firstSleep = list_begin(&elemList);
 while(firstSleep!=list_end(&elemList)){
 	struct thread *thr = list_entry(firstSleep,struct thread, elem);
-	if(ticks>=thr->ticks){
+	if(ticks>=thr->ticks){break;}
 	list_remove(firstSleep);
 	thread_unblock(thr);
 	firstSleep = list_begin(&elemList); /*sets firstSleep to the new first element in elemList*/
 }
 	
-}
+test_prio();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
