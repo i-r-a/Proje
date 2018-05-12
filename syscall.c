@@ -3,16 +3,16 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "threads/shutdown.h"
+#include "devices/shutdown.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "threads/malloc.h"
-
+typedef int pid_t;
 static void syscall_handler (struct intr_frame *);
 void syscall_halt (void);
 int syscall_wait(pid_t aa);
 void syscall_exit(int a);
-bool syscall_remove(const char *name);
+bool syscall_remove(const char *name, struct intr_frame *);
 pid_t syscall_exec(const char* cmd_line);
 int syscall_open(const char* file);
 int syscall_filesize(int fd);
@@ -21,7 +21,7 @@ int syscall_write(int fd, const void* buffer, unsigned size);
 void syscall_seek(int fd, unsigned position);
 unsigned syscall_tell(int fd);
 void syscall_close(int fd);
-void check(const void *addr);
+bool check(const void *addr);
 struct lock files;
 
 
@@ -32,7 +32,7 @@ syscall_init (void)
 }
 
 static void
-syscall_handler (struct intr_frame *f UNUSED) 
+syscall_handler (struct intr_frame *f) 
 {
  // printf ("system call!\n");
  // thread_exit (0);
@@ -41,41 +41,43 @@ syscall_handler (struct intr_frame *f UNUSED)
  		
  		quit();
  }
-  switch(*(int*) f->esp);
+  switch(*(int*) f->esp){
   case SYS_HALT:
   	syscall_halt();
   	break;
   case SYS_WAIT:
-  	pid_t pid;
-  	pid = (*int*) f->esp+1;
-  	f->eax = syscall_wait(pid);
+  	//pid_t pid;
+  	//pid_t pid = (*int*) f->esp+1;
+  	//f->eax = syscall_wait(pid);
   	break;
   case SYS_CREATE:
-  	int *pointer = f->esp;
-  	bool check1 = check(pointer+1);
-  	bool check2 = check(*(pointer+1));
-  	if(check1 || check2)
+  	bool check1 = check(f->esp+1);
+  	bool check2 = check(*(f->esp+1));
+  	if(check(f->esp+1)||check(*(f->esp+1)))
   	{
   		quit();
   	}
   	else
   	{
-  		char *name = (const char *)*(unsigned int *)p+1;
-  		unsigned int size = *((unsigned int *)p+2);
+  		char *name = (const char *)*(unsigned int *)f->esp+1;
+  		unsigned int size = *((unsigned int *)f->esp+2);
+  		lock_acquire(&files);
   		filesys_create(name, size);
+  		lock_release(&files);
   	}
   	break;
   case SYS_REMOVE:
   	//check validity
-  	syscall_remove(*(p+1));
+  	syscall_remove(*(f->esp+1), f);
   	break;
   case SYS_OPEN:		//const char* file
   	//check validity
-  	syscall_open(*(p+1));
+  	syscall_open(*(f->esp+1));
   	break;
+	}
 }
-void
-check(const void addr*)
+bool
+check(const void* addr)
 {
 	if(!is_use_vaddr(addr)){
 	
@@ -105,7 +107,7 @@ syscall_exit(int a)
 }
 
 bool
-syscall_remove(const char *name)
+syscall_remove(const char *name, struct intr_frame *f)
 {
 
 //lock
@@ -123,12 +125,12 @@ syscall_open(const char *file)
 {
 	//acquire lock
 	struct file *opened = filesys_open(file);
-	if(!f){
-	f->eax = -1;
+	if(!opened){
 	//release lock
 	return -1;
 	}
 	//release lock
 	int retVal = process_add_file(opened);
+	return retVal;
 }
 
